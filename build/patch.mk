@@ -1,33 +1,59 @@
 
-# 检查设备。make patch不能用于aosp及tos设备
-define check_patch_device
-	$(hide) if [ $(DEVICE_NAME) = "aosp" -o $(DEVICE_NAME) = "tos" ]; then \
-			echo "[ERROR] target 'patch/javapatch' cannot used upon device '$(DEVICE_NAME)'"; \
-			exit 1; \
-		fi
+VENDOR_SMALI_PATH=$(DEVICE_ROOT)/smali
+TOS_SMALI_PATH=$(PORT_DEVICE)/tos/smali
+PATCH_TARGET_PATH:=$(DEVICE_ROOT)/patch/smali/target
+
+#构建合并单个文件的依赖
+define merge_single_file
+$(eval VENDOR_SMALI_FILE:=$(call find_cor_vendor_file,$(VENDOR_SMALI_PATH),$(1)))
+$(eval RELATIVE_PATH_NORMAL:=$(call underline_to_dollar_two_transmit,$(1)))
+$(eval TOS_SMALI__FILE:=$(call underline_to_dollar_for_shell,$(2)))
+#构造patch依赖
+$(PATCH_TARGET_PATH)/$(RELATIVE_PATH_NORMAL) : $(TOS_SMALI__FILE) $(VENDOR_SMALI_FILE)
+	$(hide) $(PORT_TOOLS)/single_patch.sh $(subst $$,\$$$$,$(PATCH_TARGET_PATH)/$(RELATIVE_PATH_NORMAL) $(TOS_SMALI__FILE) $(VENDOR_SMALI_FILE))
 endef
 
-SMALI_PATCH_FAIL_FILE := $(PORT_DEVICE)/$(DEVICE_NAME)/patch/smali/target/patch_failed.txt
+$(info >>>patch....)
+ALL_TOS_SMALI_FILES:=$(sort $(call get_all_smali_files_in_dir, $(TOS_SMALI_PATH)))
+#for test:
+#ALL_TOS_SMALI_FILES:=/home/alexkzhang/github/TPS/devices/tos/smali/android.policy.jar/smali/com/android/internal/policy/impl/PhoneWindow\$$DecorView.smali
 
-# 基于smali的合并
-define patch_by_smali
-	$(hide) if [ -f $(SMALI_PATCH_FAIL_FILE) ]; then \
-			echo "patch has already been done. please see $(PORT_DEVICE)/$(DEVICE_NAME)/patch/smali/target. you can run make javapatch now"; \
-			exit; \
-		fi; \
-        source $(PORT_TOOLS)/makefile_var_setup.sh $(DEVICE_NAME); \
-		$(PORT_TOOLS)/patch_by_smali.sh $(DEVICE_NAME); \
-		if [ $$? -ne 0 ];then \
-			exit 1; \
-		fi
-endef
+#查找需要进行patch的tos源文件集合
+PATCH_TOS_FILE_COLLECTION:=
+$(foreach tos_file,$(ALL_TOS_SMALI_FILES),\
+	$(eval grep_results:=$(call check_to_patch,$(tos_file))) \
+	$(if $(grep_results),$(eval PATCH_TOS_FILE_COLLECTION+= $(call dollar_symbol_makefile,$(tos_file))),))
 
-.PHONY: patch javapatch incpatch
+#将dollar符号临时转换为下划线方便传值
+PATCH_TOS_FILE_COLLECTION:=$(call dollar_to_underline,$(PATCH_TOS_FILE_COLLECTION))
 
+#初始化目标patch集合
+PATCH_TARGET_FILE_COLLECTION:=
+$(foreach modified_tos_file,$(PATCH_TOS_FILE_COLLECTION), \
+	$(eval RELATIVE_PATH := $(call get_relative_path,$(TOS_SMALI_PATH),$(modified_tos_file))) \
+	$(eval PATCH_TARGET_FILE_COLLECTION+=$(PATCH_TARGET_PATH)/$(RELATIVE_PATH)) \
+	$(eval $(call merge_single_file,$(RELATIVE_PATH),$(modified_tos_file))))
+
+#将下划线还原成正常的dollar符号
+PATCH_TARGET_FILE_COLLECTION:=$(call underline_to_dollar,$(PATCH_TARGET_FILE_COLLECTION))
+
+.PHONY: patch clean-patch-yin
+patch:$(PATCH_TARGET_FILE_COLLECTION) 
+	@echo "-------------------"
+	@echo ">>>copy tos newly added smali files and excute overide rules...."
+	$(hide) $(PORT_TOOLS)/handle_extra_smali.sh $(DEVICE_NAME)
+	@echo ">>>patch done"
+
+
+#patch后，开发者理应只修改patch/smali/target文件夹中的文件，无需进行清理
+#TODO：参考以前是如何做的,clean-patch需要换一个文件中写，因为，这里执行Makefile相关的代码
+clean-patch-yin:
+	@echo clean-patch done.
+	
+	
+	
 ##############################################################################################
-patch:
-	$(call check_patch_device)
-	$(call patch_by_smali)
+.PHONY: javapatch incpatch
 
 TOS_OTA_NEW := $(PORT_DEVICE)/tos/ota_new
 TOS_OTA_NEW_SMALI := $(PORT_DEVICE)/tos/smali_new
@@ -89,3 +115,8 @@ incpackage:
 		else \
 			$(PORT_TOOLS)/incremental_package.sh; \
 		fi
+
+
+
+
+
