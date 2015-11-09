@@ -11,6 +11,7 @@ OTA_SYSTEM_PATH:=$(DEVICE_ROOT)/ota/system
 # extract ota.zip file
 OTA_EXTRACT_DIR:=$(DEVICE_ROOT)/ota
 OTA_ZIP :=$(DEVICE_ROOT)/ota.zip
+OTA_SYSTEM:=$(OTA_EXTRACT_DIR)/system
 # 判断ota.zip是否存在
 ifneq ($(OTA_ZIP), $(wildcard $(OTA_ZIP)))
   $(error "[ERROR] no ota.zip exist in '$(DEVICE_ROOT)/ota.zip'")
@@ -25,7 +26,7 @@ $(OTA_EXTRACT_DIR): $(OTA_ZIP)
 		rm -rf $@;\
 		exit 1; \
 	fi;\
-	echo ">>>unzip ota.zip finished"
+	echo "unzip ota.zip finished"
 
 #-----------------------------------------------------------------
 # unpack boot.img file
@@ -36,7 +37,7 @@ UNPACK_BOOT_IMG:=$(PORT_TOOLS)/unpackbootimg.sh
 ifeq ($(UNPACK_BOOTIMG_TOOL), $(wildcard $(UNPACK_BOOTIMG_TOOL)))
 UNPACK_BOOT_IMG=$(UNPACK_BOOTIMG_TOOL);
 endif
-
+$(info $(UNPACK_BOOT_IMG))  
 BOOT_IMAGE_UNPACK_DIR :=$(DEVICE_ROOT)/boot
 $(BOOT_IMAGE_UNPACK_DIR):$(OTA_EXTRACT_DIR)
 $(BOOT_IMAGE_UNPACK_DIR): $(BOOT_IMG)
@@ -49,23 +50,16 @@ $(BOOT_IMAGE_UNPACK_DIR): $(BOOT_IMG)
 		rm -rf $@;\
 		exit 1; \
 	fi
-
+	
 prepare:$(BOOT_IMAGE_UNPACK_DIR)
 endif
 
 # -----------------------------------------------------------------
 # 反编译成smali
 TAG:=$(IF_TAG_PREFIX)$(DEVICE_NAME)
-# 如果没有指定第三方定制的res apk，尝试查找
-ifeq ($(CUSTOM_RESOURCE_PACKAGE),none)
-CUSTOM_RESOURCE_PACKAGE := $(foreach FILE, $(shell find $(DEVICE_ROOT)/ota/system/framework/ -name "*.apk" ! -name "framework-res.apk" 2>/dev/null), $(shell basename $(FILE)))
-endif
-DECOMPILE_FRAMEWORK_PACKAGES:=$(foreach package,$(DECOMPILE_PACKAGES), \
-    $(shell find $(OTA_SYSTEM_PATH) -name $(package)))
 COMPILED_SMALI_DIR:=$(DEVICE_ROOT)/smali
 
 $(COMPILED_SMALI_DIR):$(OTA_EXTRACT_DIR)
-$(COMPILED_SMALI_DIR):$(DECOMPILE_FRAMEWORK_PACKAGES)
 	$(hide) rm -rf $@; 
 	$(hide) mkdir -p $@
 	@echo ">>>deodex begin...."
@@ -77,7 +71,14 @@ $(COMPILED_SMALI_DIR):$(DECOMPILE_FRAMEWORK_PACKAGES)
 		exit 1; \
 	fi; \
 	echo ">>>decompile framework jars & apks ..."; \
-	$(PORT_TOOLS)/decompile.sh $(OTA_SYSTEM_PATH) $@ $(TAG) $(DECOMPILE_PACKAGES) $(CUSTOM_RESOURCE_PACKAGE); \
+	RESOURCE_PACKAGE=$(CUSTOM_RESOURCE_PACKAGE) ;\
+	if [ $$RESOURCE_PACKAGE=none ]; then \
+		RESOURCE_PACKAGE=`find $(DEVICE_ROOT)/ota/system/framework/ -name "*.apk" ! -name "framework-res.apk" 2>/dev/null`;\
+	fi ;\
+	RESOURCE_PACKAGE=$(call get_framework_res_package $(OTA_SYSTEM/framework));\
+	echo debug:$$RESOURCE_PACKAGE;\
+	exit 0;\
+	$(PORT_TOOLS)/decompile.sh $(OTA_SYSTEM_PATH) $@ $(TAG) $(DECOMPILE_PACKAGES) $$RESOURCE_PACKAGE; \
 	if [ $$? -ne 0 ]; then \
 		rm -rf $@;\
 		exit 1; \
