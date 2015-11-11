@@ -32,27 +32,27 @@ $(OTA_EXTRACT_DIR): $(OTA_ZIP)
 # unpack boot.img file
 BOOT_IMG := $(DEVICE_ROOT)/ota/boot.img
 #判断boot.img是否存在
-ifeq ($(BOOT_IMG), $(wildcard $(BOOT_IMG)))
 UNPACK_BOOT_IMG:=$(PORT_TOOLS)/unpackbootimg.sh
 ifeq ($(UNPACK_BOOTIMG_TOOL), $(wildcard $(UNPACK_BOOTIMG_TOOL)))
 UNPACK_BOOT_IMG=$(UNPACK_BOOTIMG_TOOL);
 endif
-$(info $(UNPACK_BOOT_IMG))  
+
 BOOT_IMAGE_UNPACK_DIR :=$(DEVICE_ROOT)/boot
 $(BOOT_IMAGE_UNPACK_DIR):$(OTA_EXTRACT_DIR)
-$(BOOT_IMAGE_UNPACK_DIR): $(BOOT_IMG)
-	$(hide) rm -rf $@; 
-	$(hide) mkdir -p $@
-	@echo ">>>unpack boot.img...."
-	$(hide) $(UNPACK_BOOT_IMG) $< $@; \
-	if [ $$? -ne 0 ]; then \
-		echo ">>>unpack boot.img failed."; \
-		rm -rf $@;\
-		exit 1; \
+	$(hide)if [ -f $(BOOT_IMG) ]; then \
+		rm -rf $@; \
+		mkdir -p $@;\
+		echo ">>>unpack boot.img....";\
+		$(UNPACK_BOOT_IMG) $< $@; \
+		if [ $$? -ne 0 ]; then \
+			echo ">>>unpack boot.img failed."; \
+			rm -rf $@;\
+			exit 1; \
+		fi
 	fi
-	
+
 prepare:$(BOOT_IMAGE_UNPACK_DIR)
-endif
+
 
 # -----------------------------------------------------------------
 # 反编译成smali
